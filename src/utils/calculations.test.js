@@ -166,6 +166,7 @@ describe('calculations', () => {
           month: 'Agustus 2026',
           mas: 3000000,
           cece: 2000000,
+          bersama: 0,
           expense: 1000000,
           net: 4000000,
           cumulative: 4000000,
@@ -174,6 +175,7 @@ describe('calculations', () => {
           month: 'September 2026',
           mas: 4000000,
           cece: 3000000,
+          bersama: 0,
           expense: 0,
           net: 7000000,
           cumulative: 11000000,
@@ -182,6 +184,7 @@ describe('calculations', () => {
           month: 'Oktober 2026',
           mas: 2500000,
           cece: 2000000,
+          bersama: 0,
           expense: 0,
           net: 4500000,
           cumulative: 15500000,
@@ -205,6 +208,15 @@ describe('calculations', () => {
       expect(trends).toHaveLength(1);
       expect(trends[0].mas).toBe(2000000);
       expect(trends[0].month).toBe('Oktober 2026');
+    });
+      it('includes Bersama deposits in net and cumulative totals', () => {
+      const trends = calculateMonthlyTrends([
+        { tanggal: '2026-10-01', penabung: 'Mas', tipe: 'Setoran', nominal: 1000000 },
+        { tanggal: '2026-10-02', penabung: 'Bersama', tipe: 'Setoran', nominal: 5000000 },
+      ]);
+      expect(trends[0].bersama).toBe(5000000);
+      expect(trends[0].net).toBe(6000000);
+      expect(trends[0].cumulative).toBe(6000000);
     });
   });
 });

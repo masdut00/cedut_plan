@@ -123,6 +123,25 @@ describe('AddTransactionModal Component', () => {
   })
 })
 
+describe('AddTransactionModal input validation', () => {
+  it('rejects shorthand like "1.5jt" instead of saving Rp 1,5', () => {
+    const onSubmit = vi.fn()
+    render(<AddTransactionModal isOpen onClose={() => {}} onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByLabelText('Nominal'), { target: { value: '1.5jt' } })
+    fireEvent.click(screen.getByRole('button', { name: /Simpan/i }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/angka/i)
+  })
+
+  it('accepts "Rp 2.500.000"', () => {
+    const onSubmit = vi.fn()
+    render(<AddTransactionModal isOpen onClose={() => {}} onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByLabelText('Nominal'), { target: { value: 'Rp 2.500.000' } })
+    fireEvent.click(screen.getByRole('button', { name: /Simpan/i }))
+    expect(onSubmit.mock.calls[0][0].nominal).toBe(2500000)
+  })
+})
+
 describe('MonthlyChart Component', () => {
   it('renders one bar per month with cumulative values', () => {
     render(<MonthlyChart transactions={TRANSACTIONS} />)

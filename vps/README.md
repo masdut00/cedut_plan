@@ -67,11 +67,18 @@ docker compose ps          # ketiga service harus "running"
 docker compose logs -f evolution-api   # Ctrl+C untuk keluar
 ```
 
-Buka firewall jika perlu: `sudo ufw allow 5678/tcp && sudo ufw allow 8080/tcp`.
+Secara default port 5678 (n8n) dan 8080 (Evolution) hanya terbuka di `127.0.0.1` VPS — **jangan** buka port ini di firewall. Evolution mengirim webhook ke n8n lewat jaringan internal docker, jadi webhook tidak perlu publik. Akses UI dari laptop lewat SSH tunnel:
+
+```bash
+# jalankan di laptop, biarkan terminal terbuka
+ssh -L 5678:localhost:5678 -L 8080:localhost:8080 user@IP-VPS
+```
+
+Lalu buka `http://localhost:5678` (n8n) dan `http://localhost:8080/manager` (Evolution) di browser laptop. Jika ingin akses permanen via domain, pasang reverse proxy HTTPS (Caddy/Nginx) — lihat bagian Keamanan.
 
 ## 3. Hubungkan WhatsApp (scan QR)
 
-1. Buka `http://IP-VPS:8080/manager` dan login memakai `EVOLUTION_API_KEY`.
+1. Buka `http://localhost:8080/manager` (via SSH tunnel) dan login memakai `EVOLUTION_API_KEY`.
 2. **Create Instance** → nama **harus sama** dengan `EVOLUTION_INSTANCE` (default `wedding-bot`), channel *Baileys*.
 3. Klik instance → **Get QR Code**.
 4. Di HP nomor bot: WhatsApp → **Perangkat tertaut** → **Tautkan perangkat** → scan QR.
@@ -80,7 +87,7 @@ Buka firewall jika perlu: `sudo ufw allow 5678/tcp && sudo ufw allow 8080/tcp`.
 Alternatif via API:
 
 ```bash
-curl -X POST http://IP-VPS:8080/instance/create \
+curl -X POST http://localhost:8080/instance/create \
   -H "apikey: $EVOLUTION_API_KEY" -H "Content-Type: application/json" \
   -d '{"instanceName":"wedding-bot","integration":"WHATSAPP-BAILEYS","qrcode":true}'
 ```
@@ -89,7 +96,7 @@ Webhook ke n8n sudah diset global lewat `docker-compose.yml` (`WEBHOOK_GLOBAL_UR
 
 ## 4. Impor workflow n8n
 
-1. Buka `http://IP-VPS:5678`, buat akun owner n8n.
+1. Buka `http://localhost:5678` (via SSH tunnel), buat akun owner n8n.
 2. **Workflows → Import from File** → pilih `n8n-wedding-saving-workflow.json`.
 3. Buat credential Google Sheets:
    - Buka node **Append ke Google Sheets** → *Credential* → **Create new** → *Google Sheets OAuth2 API*.
@@ -97,7 +104,7 @@ Webhook ke n8n sudah diset global lewat `docker-compose.yml` (`WEBHOOK_GLOBAL_UR
    - Pilih credential yang sama di node **Baca Semua Transaksi**.
 4. Klik **Save**, lalu aktifkan toggle **Active** (kanan atas). Webhook produksi hanya berjalan saat workflow aktif.
 
-> Catatan: Google OAuth biasanya meminta domain/HTTPS untuk redirect URL. Jika memakai IP saja, gunakan SSH tunnel (`ssh -L 5678:localhost:5678 user@IP-VPS`) lalu buka `http://localhost:5678` saat membuat credential.
+> Catatan: Google OAuth menerima redirect `http://localhost:5678/...`, jadi membuat credential lewat SSH tunnel berfungsi tanpa domain. Isi `N8N_HOST=localhost` dan `N8N_WEBHOOK_URL=http://localhost:5678/` di `.env` bila tidak memakai domain.
 
 ## 5. Uji coba
 
@@ -147,6 +154,8 @@ Mas: Rp 40.000.000 | Cece: Rp 21.500.000
 ## Keamanan
 
 - Jangan commit `.env`. Simpan API key hanya di VPS.
-- Gunakan password/API key acak yang panjang; Evolution Manager dan n8n dapat diakses dari internet jika `BIND_ADDRESS=0.0.0.0`.
-- Untuk produksi, pasang reverse proxy HTTPS (Caddy/Nginx) di depan n8n & Evolution API dan set `BIND_ADDRESS=127.0.0.1`.
+- Biarkan `BIND_ADDRESS=127.0.0.1`. Dengan `0.0.0.0`, siapa pun bisa memanggil webhook n8n dan memalsukan setoran, serta mencegat API key Evolution yang lewat HTTP polos.
+- Butuh akses via domain? Pasang reverse proxy HTTPS (Caddy/Nginx) di depan n8n & Evolution dan tetap `BIND_ADDRESS=127.0.0.1`. Jangan proxy-kan path `/webhook/` n8n ke publik.
+- Workflow juga menolak payload yang `instance`-nya bukan `EVOLUTION_INSTANCE` (lapisan tambahan, bukan pengganti).
+- Gunakan password/API key acak yang panjang.
 - Backup volume secara berkala: `docker run --rm -v vps_n8n_data:/data -v $PWD:/backup alpine tar czf /backup/n8n-backup.tgz /data`.

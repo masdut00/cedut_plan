@@ -144,6 +144,7 @@ export function calculateSimulation(
  *   month: string,
  *   mas: number,
  *   cece: number,
+ *   bersama: number,
  *   expense: number,
  *   net: number,
  *   cumulative: number
@@ -182,7 +183,7 @@ export function calculateMonthlyTrends(transactions = []) {
 
     let entry = monthlyMap.get(key);
     if (!entry) {
-      entry = { key, year, month, mas: 0, cece: 0, expense: 0 };
+      entry = { key, year, month, mas: 0, cece: 0, bersama: 0, expense: 0 };
       monthlyMap.set(key, entry);
     }
 
@@ -191,6 +192,8 @@ export function calculateMonthlyTrends(transactions = []) {
         entry.mas += nominal;
       } else if (t.penabung === 'Cece') {
         entry.cece += nominal;
+      } else {
+        entry.bersama += nominal;
       }
     } else if (t.tipe === 'Pengeluaran') {
       entry.expense += nominal;
@@ -203,12 +206,13 @@ export function calculateMonthlyTrends(transactions = []) {
 
   let cumulative = 0;
   return sortedEntries.map((entry) => {
-    const net = (entry.mas + entry.cece) - entry.expense;
+    const net = (entry.mas + entry.cece + entry.bersama) - entry.expense;
     cumulative += net;
     return {
       month: `${MONTH_NAMES_LONG[entry.month]} ${entry.year}`,
       mas: entry.mas,
       cece: entry.cece,
+      bersama: entry.bersama,
       expense: entry.expense,
       net,
       cumulative,

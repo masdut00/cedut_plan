@@ -8,7 +8,7 @@ services:
     container_name: wedding-n8n
     restart: unless-stopped
     ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:5678:5678"
+      - "${BIND_ADDRESS:-127.0.0.1}:5678:5678"
     environment:
       - N8N_HOST=${N8N_HOST}
       - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
@@ -41,7 +41,7 @@ services:
     depends_on:
       - postgres
     ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:8080:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
     environment:
       - SERVER_URL=${EVOLUTION_SERVER_URL}
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}

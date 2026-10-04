@@ -109,10 +109,23 @@ describe('App Component', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /Simpan/i }))
 
     expect(screen.getByText('Setoran manual web')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/tertimpa saat sinkronisasi/i)
     expect(JSON.parse(localStorage.getItem('wedding_transactions'))).toHaveLength(3)
 
     fireEvent.click(screen.getByRole('button', { name: /Hapus transaksi Setoran manual web/i }))
     expect(screen.queryByText('Setoran manual web')).not.toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem('wedding_transactions'))).toHaveLength(2)
+  })
+
+  it('clears offline notice after a successful re-sync', async () => {
+    mockFetchFailure()
+    render(<App />)
+    await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Offline Cache'))
+    expect(screen.getByRole('status')).toBeInTheDocument()
+
+    mockFetchSuccess()
+    fireEvent.click(screen.getByRole('button', { name: /Sinkronkan/i }))
+    await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Live'))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })

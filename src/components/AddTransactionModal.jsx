@@ -49,7 +49,11 @@ export default function AddTransactionModal({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    const nominal = parseNominal(form.nominal)
+    if (!/^(Rp\s*)?[\d.,\s]+$/i.test(form.nominal.trim())) {
+      setError('Nominal harus berupa angka, mis. 1.500.000.')
+      return
+    }
+    const nominal = parseNominal(form.nominal.replace(/\s/g, ''))
     if (nominal <= 0) {
       setError('Nominal harus lebih dari Rp 0.')
       return

@@ -41,6 +41,7 @@ export default function App() {
         setTransactions(data)
         setSyncStatus('live')
         setLastSync(new Date())
+        setNotice(null)
         return
       }
       setTransactions(loadStoredTransactions())
@@ -66,6 +67,12 @@ export default function App() {
   const updateTransactions = (next) => {
     setTransactions(next)
     saveStoredTransactions(next)
+    if (syncStatus === 'live') {
+      setNotice({
+        type: 'info',
+        text: 'Perubahan hanya tersimpan di perangkat ini dan akan tertimpa saat sinkronisasi Google Sheet. Catat lewat WhatsApp bot agar masuk ke Sheet.',
+      })
+    }
   }
 
   const handleAdd = (tx) => updateTransactions([...transactions, tx])
