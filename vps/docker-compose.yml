@@ -1,0 +1,85 @@
+# Mas & Cece Wedding Saving — WhatsApp AI Bot stack
+# Services: n8n (workflow engine), Evolution API (WhatsApp gateway), Postgres (database Evolution API v2)
+# Jalankan: docker compose up -d   (dari folder vps/, setelah menyalin .env.example -> .env)
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    container_name: wedding-n8n
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:5678:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_PORT=5678
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-false}
+      - GENERIC_TIMEZONE=Asia/Jakarta
+      - TZ=Asia/Jakarta
+      # Workflow membaca konfigurasi lewat $env.* di bawah ini
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+      - TARGET_AMOUNT=${TARGET_AMOUNT:-100000000}
+      - MAS_NUMBER=${MAS_NUMBER}
+      - CECE_NUMBER=${CECE_NUMBER}
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-wedding-bot}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - wedding-net
+
+  evolution-api:
+    image: atendai/evolution-api:${EVOLUTION_VERSION:-v2.2.3}
+    container_name: wedding-evolution-api
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:8080:8080"
+    environment:
+      - SERVER_URL=${EVOLUTION_SERVER_URL}
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=wedding_evolution
+      - CACHE_REDIS_ENABLED=false
+      - CACHE_LOCAL_ENABLED=true
+      # Kirim setiap pesan masuk ke webhook n8n (jaringan internal docker)
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_GLOBAL_URL=http://n8n:5678/webhook/wedding-saving
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+      - LOG_LEVEL=ERROR,WARN,INFO
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - wedding-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: wedding-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=evolution
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wedding-net
+
+volumes:
+  n8n_data:
+  evolution_instances:
+  postgres_data:
+
+networks:
+  wedding-net:
+    driver: bridge

@@ -1,0 +1,392 @@
+{
+  "name": "Mas & Cece Wedding Saving Bot",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "wedding-saving",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wedding-saving",
+        "options": {}
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Normalisasi Pesan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Ambil pesan teks dari payload Evolution API (event messages.upsert)\nconst body = $input.first().json.body || {};\nconst data = body.data || {};\nconst key = data.key || {};\n\nconst event = String(body.event || '').toLowerCase().replace('_', '.');\nif (event !== 'messages.upsert' || key.fromMe) return [];\n\nlet jid = String(key.remoteJid || '');\nif (jid.endsWith('@g.us')) return []; // abaikan grup\nif (jid.endsWith('@lid')) jid = String(key.senderPn || key.remoteJidAlt || jid);\n\nconst number = jid.split('@')[0].replace(/\\D/g, '');\nconst msg = data.message || {};\nconst text = String(msg.conversation || msg.extendedTextMessage?.text || '').trim();\nif (!text) return [];\n\n// Hanya nomor Mas & Cece yang diizinkan\nconst normalize = (n) => String(n || '').replace(/\\D/g, '');\nconst masNumber = normalize($env.MAS_NUMBER);\nconst ceceNumber = normalize($env.CECE_NUMBER);\nif (!number || (number !== masNumber && number !== ceceNumber)) return [];\nconst defaultPenabung = number === masNumber ? 'Mas' : 'Cece';\n\nconst MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));\nconst pad = (n) => String(n).padStart(2, '0');\nconst today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;\nconst monthName = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;\n\nconst systemPrompt = [\n  'Kamu adalah asisten pencatat tabungan pernikahan Mas & Cece.',\n  'Tugasmu mengubah pesan WhatsApp berbahasa Indonesia menjadi JSON dengan skema:',\n  '{\"intent\":\"transaksi\"|\"rekap\"|\"unknown\",\"penabung\":\"Mas\"|\"Cece\"|\"Bersama\",\"tipe\":\"Setoran\"|\"Pengeluaran\",\"kategori\":string,\"nominal\":number,\"catatan\":string,\"bulan\":string}',\n  'Aturan:',\n  '- intent \"rekap\" jika pengirim hanya menanyakan saldo/rekap/progress tabungan.',\n  '- intent \"unknown\" jika pesan bukan transaksi dan bukan permintaan rekap.',\n  '- nominal dalam Rupiah utuh: \"1.5jt\"/\"1,5 juta\" = 1500000, \"500rb\"/\"500k\" = 500000, \"2 jt\" = 2000000.',\n  '- penabung: \"Mas\" atau \"Cece\" jika disebut; \"Bersama\" jika disebut bersama/berdua; jika tidak disebut gunakan \"' + defaultPenabung + '\".',\n  '- tipe \"Pengeluaran\" jika pesan berisi bayar, beli, DP, keluar, transfer ke vendor; selain itu \"Setoran\".',\n  '- kategori contoh: \"Tabungan Rutin\", \"Bonus & Freelance\", \"Venue\", \"Katering\", \"Dekorasi\", \"Busana\", \"Dokumentasi\", \"Lainnya\". Setoran tanpa keterangan = \"Tabungan Rutin\".',\n  '- bulan format \"<NamaBulan> <Tahun>\" berbahasa Indonesia; jika tidak disebut gunakan \"' + monthName + '\".',\n  '- catatan: ringkasan singkat isi pesan.',\n  'Balas HANYA dengan JSON valid tanpa teks lain.'\n].join('\\n');\n\nreturn [{\n  json: {\n    number,\n    text,\n    defaultPenabung,\n    today,\n    monthName,\n    geminiBody: {\n      systemInstruction: { parts: [{ text: systemPrompt }] },\n      contents: [{ role: 'user', parts: [{ text }] }],\n      generationConfig: { responseMimeType: 'application/json', temperature: 0 }\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Gemini Parser",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL || 'gemini-2.5-flash' }}:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiBody) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Validasi Hasil AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Validasi hasil ekstraksi Gemini dan tentukan aksi: append | rekap | error\nconst src = $('Normalisasi Pesan').first().json;\nconst res = $input.first().json;\n\nlet parsed = {};\ntry {\n  const raw = res.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n  parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());\n} catch (e) {\n  parsed = { intent: 'unknown' };\n}\n\nif (parsed.intent === 'rekap') {\n  return [{ json: { action: 'rekap' } }];\n}\n\nconst nominal = Math.round(Number(parsed.nominal) || 0);\nif (parsed.intent !== 'transaksi' || nominal <= 0) {\n  return [{\n    json: {\n      action: 'error',\n      reply: [\n        'Maaf, pesannya belum bisa dipahami 🙏',\n        '',\n        'Contoh format:',\n        '• Cece setor 1.5jt',\n        '• Mas nabung 2 juta bonus freelance',\n        '• Bayar DP katering 5jt',\n        '• Rekap'\n      ].join('\\n')\n    }\n  }];\n}\n\nconst penabung = ['Mas', 'Cece', 'Bersama'].includes(parsed.penabung) ? parsed.penabung : src.defaultPenabung;\nconst tipe = parsed.tipe === 'Pengeluaran' ? 'Pengeluaran' : 'Setoran';\n\nreturn [{\n  json: {\n    action: 'append',\n    row: {\n      id: `TX-${Date.now()}`,\n      tanggal: src.today,\n      bulan: parsed.bulan || src.monthName,\n      penabung,\n      tipe,\n      kategori: parsed.kategori || (tipe === 'Setoran' ? 'Tabungan Rutin' : 'Lainnya'),\n      nominal,\n      catatan: parsed.catatan || src.text,\n      created_at: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Perlu Dicatat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-append",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "append",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Siapkan Baris",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        180
+      ],
+      "parameters": {
+        "jsCode": "// Kirim hanya kolom sheet ke node Google Sheets\nreturn [{ json: $input.first().json.row }];"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Append ke Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1320,
+        180
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Transactions",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Minta Rekap?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-rekap",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "rekap",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Baca Semua Transaksi",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1540,
+        300
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Transactions",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Hitung Rekap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Hitung rekap tabungan dari seluruh baris sheet Transactions\nconst rows = $input.all().map((i) => i.json).filter((r) => r && (r.nominal !== undefined));\nconst toNumber = (v) => typeof v === 'number' ? v : Number(String(v || '').replace(/[^\\d,-]/g, '').replace(',', '.')) || 0;\n\nlet mas = 0, cece = 0, expense = 0;\nfor (const r of rows) {\n  const n = toNumber(r.nominal);\n  if (/pengeluaran/i.test(String(r.tipe))) expense += n;\n  else if (/cece/i.test(String(r.penabung))) cece += n;\n  else if (/mas/i.test(String(r.penabung))) mas += n;\n}\n\nconst target = Number($env.TARGET_AMOUNT) || 100000000;\nconst net = mas + cece - expense;\nconst remaining = Math.max(0, target - net);\nconst pct = Math.max(0, Math.min(100, Math.round((net / target) * 100)));\nconst fmt = (n) => (n < 0 ? '-Rp ' : 'Rp ') + Math.abs(Math.round(n)).toLocaleString('id-ID');\nconst filled = Math.round(pct / 10);\nconst bar = '█'.repeat(filled) + '░'.repeat(10 - filled);\n\nconst validated = $('Validasi Hasil AI').first().json;\nconst lines = [];\nif (validated.action === 'append') {\n  const r = validated.row;\n  lines.push(`✅ Tercatat! ${r.penabung} ${r.tipe.toLowerCase()} ${fmt(r.nominal)}`);\n  lines.push(`🏷️ ${r.kategori} · 📅 ${r.bulan}`);\n  lines.push('');\n}\nlines.push('💍 *Rekap Tabungan Mas & Cece*');\nlines.push(`Terkumpul: ${fmt(net)}`);\nlines.push(`Target: ${fmt(target)}`);\nlines.push(`Sisa: ${fmt(remaining)}`);\nlines.push(`Progress: ${bar} ${pct}%`);\nlines.push(`Mas: ${fmt(mas)} | Cece: ${fmt(cece)}`);\nif (expense > 0) lines.push(`Pengeluaran: ${fmt(expense)}`);\nif (remaining === 0) lines.push('', '🎉 Target tercapai! Selamat menuju hari bahagia!');\n\nreturn [{ json: { reply: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Balas WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_API_URL || 'http://evolution-api:8080' }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.EVOLUTION_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $('Normalisasi Pesan').first().json.number, text: $json.reply }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Normalisasi Pesan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalisasi Pesan": {
+      "main": [
+        [
+          {
+            "node": "Gemini Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Parser": {
+      "main": [
+        [
+          {
+            "node": "Validasi Hasil AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Hasil AI": {
+      "main": [
+        [
+          {
+            "node": "Perlu Dicatat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perlu Dicatat?": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Baris",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Minta Rekap?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Baris": {
+      "main": [
+        [
+          {
+            "node": "Append ke Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append ke Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Baca Semua Transaksi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Minta Rekap?": {
+      "main": [
+        [
+          {
+            "node": "Baca Semua Transaksi",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Balas WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baca Semua Transaksi": {
+      "main": [
+        [
+          {
+            "node": "Hitung Rekap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hitung Rekap": {
+      "main": [
+        [
+          {
+            "node": "Balas WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
