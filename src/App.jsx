@@ -1,39 +1,156 @@
-import React from 'react'
-import { Heart, Sparkles } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Header from './components/Header'
+import MetricCards from './components/MetricCards'
+import WeddingProgressBar from './components/WeddingProgressBar'
+import ContributionSplit from './components/ContributionSplit'
+import SavingsSimulator from './components/SavingsSimulator'
+import MonthlyChart from './components/MonthlyChart'
+import TransactionHistory from './components/TransactionHistory'
+import AddTransactionModal from './components/AddTransactionModal'
+import { calculateSummary } from './utils/calculations'
+import { fetchSheetTransactions } from './services/googleSheetService'
+import {
+  exportTransactionsJSON,
+  importTransactionsJSON,
+  loadStoredTarget,
+  loadStoredTransactions,
+  saveStoredTransactions,
+} from './services/storageService'
+import { DEFAULT_SHEET_ID } from './data/initialData'
 
 export default function App() {
+  const [transactions, setTransactions] = useState(() => loadStoredTransactions())
+  const [targetAmount] = useState(() => loadStoredTarget())
+  const [syncStatus, setSyncStatus] = useState('loading')
+  const [lastSync, setLastSync] = useState(null)
+  const [notice, setNotice] = useState(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const mountedRef = useRef(true)
+
+  const summary = useMemo(
+    () => calculateSummary(transactions, targetAmount),
+    [transactions, targetAmount]
+  )
+
+  const syncFromSheet = useCallback(async () => {
+    setSyncStatus('loading')
+    try {
+      const data = await fetchSheetTransactions(DEFAULT_SHEET_ID, '0', { fallbackToStorage: false })
+      if (!mountedRef.current) return
+      if (data.length > 0) {
+        setTransactions(data)
+        setSyncStatus('live')
+        setLastSync(new Date())
+        return
+      }
+      setTransactions(loadStoredTransactions())
+      setSyncStatus('cached')
+      setNotice({ type: 'info', text: 'Google Sheet masih kosong, menampilkan data cache lokal.' })
+    } catch (err) {
+      if (!mountedRef.current) return
+      console.warn('Sinkronisasi Google Sheet gagal:', err)
+      setTransactions(loadStoredTransactions())
+      setSyncStatus('cached')
+      setNotice({ type: 'info', text: 'Tidak dapat terhubung ke Google Sheet. Menampilkan data cache offline.' })
+    }
+  }, [])
+
+  useEffect(() => {
+    mountedRef.current = true
+    syncFromSheet()
+    return () => {
+      mountedRef.current = false
+    }
+  }, [syncFromSheet])
+
+  const updateTransactions = (next) => {
+    setTransactions(next)
+    saveStoredTransactions(next)
+  }
+
+  const handleAdd = (tx) => updateTransactions([...transactions, tx])
+
+  const handleDelete = (id) => updateTransactions(transactions.filter((t) => t.id !== id))
+
+  const handleExport = () => {
+    const blob = new Blob([exportTransactionsJSON(transactions)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `wedding-saving-backup-${new Date().toISOString().slice(0, 10)}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImport = async (file) => {
+    try {
+      const imported = importTransactionsJSON(await file.text())
+      updateTransactions(imported)
+      setNotice({ type: 'success', text: `${imported.length} transaksi berhasil diimpor.` })
+    } catch (err) {
+      setNotice({ type: 'error', text: `Gagal impor: ${err.message}` })
+    }
+  }
+
+  const noticeStyles = {
+    info: 'bg-amber-50 text-amber-800 border-amber-200',
+    success: 'bg-wedding-sage-50 text-wedding-sage-600 border-wedding-sage-200',
+    error: 'bg-red-50 text-red-700 border-red-200',
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-wedding-rose-50 via-slate-50 to-wedding-gold-50 text-slate-800">
-      <header className="border-b border-wedding-rose-100 bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-wedding-rose-100 flex items-center justify-center text-wedding-rose-600 shadow-inner">
-              <Heart className="w-5 h-5 fill-current" />
-            </div>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold font-serif-wedding text-slate-900 tracking-tight flex items-center gap-2">
-                Mas & Cece Wedding Saving
-                <Sparkles className="w-4 h-4 text-wedding-gold-500 inline" />
-              </h1>
-              <p className="text-xs text-slate-500">Menuju Hari Bahagia & Target Tabungan Bersama</p>
-            </div>
-          </div>
-          <div className="text-right hidden sm:block">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-wedding-rose-50 text-wedding-rose-700 border border-wedding-rose-200">
-              Target: Rp 100.000.000
-            </span>
-          </div>
-        </div>
-      </header>
+      <Header
+        targetAmount={targetAmount}
+        syncStatus={syncStatus}
+        lastSync={lastSync}
+        onSync={syncFromSheet}
+        onExport={handleExport}
+        onImport={handleImport}
+      />
 
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-2xl p-8 border border-wedding-rose-100 shadow-sm text-center">
-          <h2 className="text-lg font-semibold text-slate-800 mb-2">Selamat Datang di Portal Tabungan Pernikahan</h2>
-          <p className="text-slate-600 max-w-lg mx-auto text-sm">
-            Aplikasi pengelolaan dan pencatatan tabungan pernikahan Mas & Cece. Pantau progress, catat setoran, dan proyeksikan waktu impian tercapai.
-          </p>
+      <main className="max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+        {notice && (
+          <div
+            role="status"
+            className={`flex items-start justify-between gap-3 px-4 py-3 rounded-xl border text-sm ${noticeStyles[notice.type]}`}
+          >
+            <span>{notice.text}</span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="Tutup pemberitahuan"
+              className="text-xs font-medium opacity-70 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        <MetricCards summary={summary} />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <WeddingProgressBar summary={summary} />
+          <ContributionSplit summary={summary} />
         </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SavingsSimulator remaining={summary.remaining} />
+          <MonthlyChart transactions={transactions} targetAmount={targetAmount} />
+        </div>
+
+        <TransactionHistory
+          transactions={transactions}
+          onDelete={handleDelete}
+          onAddClick={() => setIsModalOpen(true)}
+        />
       </main>
+
+      <AddTransactionModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleAdd}
+      />
     </div>
   )
 }
