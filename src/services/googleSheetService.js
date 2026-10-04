@@ -84,7 +84,7 @@ function parseCellDate(rawVal, formattedVal) {
  * @param {string} dateString
  * @returns {string}
  */
-function deriveMonthName(dateString) {
+export function deriveMonthName(dateString) {
   if (!dateString) return '';
   const match = dateString.match(/^(\d{4})-(\d{2})/);
   if (match) {
