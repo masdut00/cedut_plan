@@ -47,7 +47,7 @@ services:
       - wedding-net
 
   evolution-api:
-    image: atendai/evolution-api:${EVOLUTION_VERSION:-v2.2.3}
+    image: evoapicloud/evolution-api:${EVOLUTION_VERSION:-v2.3.7}
     container_name: wedding-evolution-api
     restart: unless-stopped
     depends_on:
