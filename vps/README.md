@@ -44,7 +44,7 @@ Dashboard web otomatis menampilkan transaksi baru saat tombol **Sinkronkan Googl
 
 ```bash
 # di VPS
-git clone <repo-anda> wedding-saving && cd wedding-saving/vps
+git clone https://github.com/masdut00/cedut_plan.git && cd cedut_plan/vps
 cp .env.example .env
 nano .env        # isi semua nilai "ganti-..." / "isi-..."
 ```
@@ -59,13 +59,24 @@ openssl rand -hex 16   # POSTGRES_PASSWORD
 
 Isi `MAS_NUMBER` dan `CECE_NUMBER` dengan format internasional tanpa `+` (contoh `6281234567890`). Hanya dua nomor ini yang dilayani bot.
 
-Jalankan:
+Jalankan (dari root repo):
 
 ```bash
-docker compose up -d
-docker compose ps          # ketiga service harus "running"
-docker compose logs -f evolution-api   # Ctrl+C untuk keluar
+cd ..
+chmod +x deploy.sh   # sekali saja, jika belum executable
+./deploy.sh          # build dashboard + jalankan semua service
+docker compose -f vps/docker-compose.yml logs -f evolution-api   # Ctrl+C untuk keluar
 ```
+
+Keempat service (`web`, `n8n`, `evolution-api`, `postgres`) harus berstatus "running". Dashboard web terbuka di `http://IP-VPS` (atau `http://IP-VPS:WEB_PORT` jika `WEB_PORT` diganti). Buka port tersebut di firewall, mis. `sudo ufw allow 80/tcp`.
+
+### Update setelah ada perubahan di GitHub
+
+```bash
+cd ~/cedut_plan && ./deploy.sh
+```
+
+Script menarik commit terbaru dari branch `main` (`git pull --ff-only`), build ulang image yang berubah, menjalankan ulang container, lalu membersihkan image lama. Data n8n, WhatsApp, dan Postgres aman karena tersimpan di volume docker. Gunakan `./deploy.sh --no-pull` untuk build ulang tanpa menarik update. Jangan edit file langsung di VPS (kecuali `vps/.env`), karena `git pull` akan gagal jika ada perubahan lokal.
 
 Secara default port 5678 (n8n) dan 8080 (Evolution) hanya terbuka di `127.0.0.1` VPS — **jangan** buka port ini di firewall. Evolution mengirim webhook ke n8n lewat jaringan internal docker, jadi webhook tidak perlu publik. Akses UI dari laptop lewat SSH tunnel:
 
