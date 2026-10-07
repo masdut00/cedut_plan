@@ -1,0 +1,13 @@
+# Sambungkan dashboard ke network docker milik reverse proxy (mis. Nginx Proxy Manager).
+# Otomatis dipakai deploy.sh jika PROXY_NETWORK diisi di vps/.env.
+# Di proxy, arahkan domain ke host "wedding-web" port 80.
+services:
+  web:
+    networks:
+      - wedding-net
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}

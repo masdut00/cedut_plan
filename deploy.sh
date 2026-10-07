@@ -24,14 +24,21 @@ if [ "${1:-}" != "--no-pull" ]; then
   git pull --ff-only origin "$BRANCH" || die "git pull gagal. Ada perubahan lokal di VPS? Cek: git status"
 fi
 
-log "Build & jalankan ulang container"
 cd "$COMPOSE_DIR"
-docker compose up -d --build --remove-orphans
+COMPOSE=(docker compose -f docker-compose.yml)
+PROXY_NETWORK="$(grep -E '^PROXY_NETWORK=' .env | cut -d= -f2- | tr -d '"' || true)"
+if [ -n "$PROXY_NETWORK" ]; then
+  docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1     || die "Network '$PROXY_NETWORK' (PROXY_NETWORK di vps/.env) tidak ada. Cek: docker network ls"
+  COMPOSE+=(-f docker-compose.proxy.yml)
+fi
+
+log "Build & jalankan ulang container"
+"${COMPOSE[@]}" up -d --build --remove-orphans
 
 log "Membersihkan image lama"
 docker image prune -f >/dev/null
 
 log "Status container"
-docker compose ps
+"${COMPOSE[@]}" ps
 
 log "Selesai. Commit aktif: $(git -C "$ROOT_DIR" log -1 --format='%h %s')"

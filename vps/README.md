@@ -70,7 +70,21 @@ docker compose -f vps/docker-compose.yml logs -f evolution-api   # Ctrl+C untuk 
 
 Secara default hanya service `web` (dashboard) yang jalan, di `127.0.0.1:8081`. Untuk menyalakan bot WhatsApp, isi `COMPOSE_PROFILES=bot` di `vps/.env` lalu jalankan `./deploy.sh --no-pull`; keempat service (`web`, `n8n`, `evolution-api`, `postgres`) harus berstatus "running".
 
-### Domain + HTTPS untuk dashboard (Nginx host)
+### Domain + HTTPS lewat Nginx Proxy Manager (NPM)
+
+Jika VPS memakai Nginx Proxy Manager (UI di port 81):
+
+1. **DNS (Rumahweb)**: tambah record **A**, host `tabungan`, value = IP VPS.
+2. Cari network docker milik NPM: `docker inspect $(docker ps -qf ancestor=jc21/nginx-proxy-manager) -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
+3. Isi `PROXY_NETWORK=<nama-network>` di `vps/.env`, lalu `./deploy.sh --no-pull`.
+4. Di UI NPM → **Hosts → Proxy Hosts → Add Proxy Host**:
+   - *Domain Names*: `tabungan.domainmu.com`
+   - *Scheme* `http`, *Forward Hostname* `wedding-web`, *Forward Port* `80`
+   - Centang *Block Common Exploits*
+   - Tab **SSL**: *Request a new SSL Certificate*, centang *Force SSL* & *HTTP/2*
+   - Password dashboard: **Access Lists → Add** (Authorization: username/password), lalu pilih access list itu di tab *Details* proxy host.
+
+### Domain + HTTPS untuk dashboard (Nginx host, tanpa NPM)
 
 Dashboard tidak dibuka langsung ke internet; Nginx di host meneruskan `https://tabungan.domainmu.com` ke `127.0.0.1:8081` dan meminta username/password.
 
