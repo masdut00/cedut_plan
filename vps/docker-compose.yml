@@ -1,5 +1,6 @@
 # Mas & Cece Wedding Saving — WhatsApp AI Bot stack
 # Services: web (dashboard), n8n (workflow engine), Evolution API (WhatsApp gateway), Postgres (database Evolution API v2)
+# n8n, Evolution API & Postgres ada di profile "bot" -> hanya jalan jika COMPOSE_PROFILES=bot di .env
 # Jalankan: ../deploy.sh   atau   docker compose up -d --build   (dari folder vps/, setelah menyalin .env.example -> .env)
 
 services:
@@ -11,11 +12,12 @@ services:
     container_name: wedding-web
     restart: unless-stopped
     ports:
-      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-80}:80"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8081}:80"
     networks:
       - wedding-net
 
   n8n:
+    profiles: ["bot"]
     image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
     container_name: wedding-n8n
     restart: unless-stopped
@@ -47,6 +49,7 @@ services:
       - wedding-net
 
   evolution-api:
+    profiles: ["bot"]
     image: evoapicloud/evolution-api:${EVOLUTION_VERSION:-v2.3.7}
     container_name: wedding-evolution-api
     restart: unless-stopped
@@ -75,6 +78,7 @@ services:
       - wedding-net
 
   postgres:
+    profiles: ["bot"]
     image: postgres:16-alpine
     container_name: wedding-postgres
     restart: unless-stopped

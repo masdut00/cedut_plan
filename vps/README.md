@@ -68,7 +68,22 @@ chmod +x deploy.sh   # sekali saja, jika belum executable
 docker compose -f vps/docker-compose.yml logs -f evolution-api   # Ctrl+C untuk keluar
 ```
 
-Keempat service (`web`, `n8n`, `evolution-api`, `postgres`) harus berstatus "running". Dashboard web terbuka di `http://IP-VPS` (atau `http://IP-VPS:WEB_PORT` jika `WEB_PORT` diganti). Buka port tersebut di firewall, mis. `sudo ufw allow 80/tcp`.
+Secara default hanya service `web` (dashboard) yang jalan, di `127.0.0.1:8081`. Untuk menyalakan bot WhatsApp, isi `COMPOSE_PROFILES=bot` di `vps/.env` lalu jalankan `./deploy.sh --no-pull`; keempat service (`web`, `n8n`, `evolution-api`, `postgres`) harus berstatus "running".
+
+### Domain + HTTPS untuk dashboard (Nginx host)
+
+Dashboard tidak dibuka langsung ke internet; Nginx di host meneruskan `https://tabungan.domainmu.com` ke `127.0.0.1:8081` dan meminta username/password.
+
+1. **DNS (Rumahweb)**: Clientzone → Domain → Kelola DNS → tambah record **A**, host `tabungan`, value = IP VPS. Tunggu propagasi (cek: `ping tabungan.domainmu.com`).
+2. **Firewall**: `sudo ufw allow 'Nginx Full'` (port 80 & 443).
+3. **Pasang**:
+   ```bash
+   sudo ./vps/setup-domain.sh domainmu.com email@kamu.com
+   ```
+   Script mengecek DNS, meminta username/password dashboard, memasang config Nginx (`/etc/nginx/sites-available/cedut`), menguji `nginx -t`, lalu memasang sertifikat Let's Encrypt via Certbot (perpanjangan otomatis).
+4. Buka `https://tabungan.domainmu.com`.
+
+Ganti password: `sudo rm /etc/nginx/cedut.htpasswd` lalu jalankan ulang script.
 
 ### Update setelah ada perubahan di GitHub
 
