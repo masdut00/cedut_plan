@@ -12,7 +12,7 @@ services:
     container_name: wedding-web
     restart: unless-stopped
     ports:
-      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8081}:80"
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8081}:80"
     networks:
       - wedding-net
 

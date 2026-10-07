@@ -68,53 +68,11 @@ chmod +x deploy.sh   # sekali saja, jika belum executable
 docker compose -f vps/docker-compose.yml logs -f evolution-api   # Ctrl+C untuk keluar
 ```
 
-Secara default hanya service `web` (dashboard) yang jalan, di `127.0.0.1:8081`. Untuk menyalakan bot WhatsApp, isi `COMPOSE_PROFILES=bot` di `vps/.env` lalu jalankan `./deploy.sh --no-pull`; keempat service (`web`, `n8n`, `evolution-api`, `postgres`) harus berstatus "running".
+Secara default hanya service `web` (dashboard) yang jalan, di `http://IP-VPS:8081`. Untuk menyalakan bot WhatsApp, isi `COMPOSE_PROFILES=bot` di `vps/.env` lalu jalankan `./deploy.sh --no-pull`; keempat service (`web`, `n8n`, `evolution-api`, `postgres`) harus berstatus "running".
 
-### Domain + HTTPS lewat Nginx Proxy Manager (NPM)
+### Akses dashboard, update, dan domain
 
-Jika VPS memakai Nginx Proxy Manager (UI di port 81):
-
-1. **DNS (Rumahweb)**: tambah record **A**, host `tabungan`, value = IP VPS.
-2. Cari network docker milik NPM: `docker inspect $(docker ps -qf ancestor=jc21/nginx-proxy-manager) -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
-3. Isi `PROXY_NETWORK=<nama-network>` di `vps/.env`, lalu `./deploy.sh --no-pull`.
-4. Di UI NPM → **Hosts → Proxy Hosts → Add Proxy Host**:
-   - *Domain Names*: `tabungan.domainmu.com`
-   - *Scheme* `http`, *Forward Hostname* `wedding-web`, *Forward Port* `80`
-   - Centang *Block Common Exploits*
-   - Tab **SSL**: *Request a new SSL Certificate*, centang *Force SSL* & *HTTP/2*
-   - Password dashboard: **Access Lists → Add** (Authorization: username/password), lalu pilih access list itu di tab *Details* proxy host.
-
-### Domain + HTTPS untuk dashboard (Nginx host, tanpa NPM)
-
-Dashboard tidak dibuka langsung ke internet; Nginx di host meneruskan `https://tabungan.domainmu.com` ke `127.0.0.1:8081` dan meminta username/password.
-
-1. **DNS (Rumahweb)**: Clientzone → Domain → Kelola DNS → tambah record **A**, host `tabungan`, value = IP VPS. Tunggu propagasi (cek: `ping tabungan.domainmu.com`).
-2. **Firewall**: `sudo ufw allow 'Nginx Full'` (port 80 & 443).
-3. **Pasang**:
-   ```bash
-   sudo ./vps/setup-domain.sh domainmu.com email@kamu.com
-   ```
-   Script mengecek DNS, meminta username/password dashboard, memasang config Nginx (`/etc/nginx/sites-available/cedut`), menguji `nginx -t`, lalu memasang sertifikat Let's Encrypt via Certbot (perpanjangan otomatis).
-4. Buka `https://tabungan.domainmu.com`.
-
-Ganti password: `sudo rm /etc/nginx/cedut.htpasswd` lalu jalankan ulang script.
-
-### Update setelah ada perubahan di GitHub
-
-```bash
-cd ~/cedut_plan && ./deploy.sh
-```
-
-Script menarik commit terbaru dari branch `main` (`git pull --ff-only`), build ulang image yang berubah, menjalankan ulang container, lalu membersihkan image lama. Data n8n, WhatsApp, dan Postgres aman karena tersimpan di volume docker. Gunakan `./deploy.sh --no-pull` untuk build ulang tanpa menarik update. Jangan edit file langsung di VPS (kecuali `vps/.env`), karena `git pull` akan gagal jika ada perubahan lokal.
-
-Secara default port 5678 (n8n) dan 8080 (Evolution) hanya terbuka di `127.0.0.1` VPS — **jangan** buka port ini di firewall. Evolution mengirim webhook ke n8n lewat jaringan internal docker, jadi webhook tidak perlu publik. Akses UI dari laptop lewat SSH tunnel:
-
-```bash
-# jalankan di laptop, biarkan terminal terbuka
-ssh -L 5678:localhost:5678 -L 8080:localhost:8080 user@IP-VPS
-```
-
-Lalu buka `http://localhost:5678` (n8n) dan `http://localhost:8080/manager` (Evolution) di browser laptop. Jika ingin akses permanen via domain, pasang reverse proxy HTTPS (Caddy/Nginx) — lihat bagian Keamanan.
+Lihat [`DEPLOY.md`](../DEPLOY.md) di root repo.
 
 ## 3. Hubungkan WhatsApp (scan QR)
 
