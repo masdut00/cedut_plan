@@ -8,6 +8,9 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        VITE_SHEET_WRITE_URL: ${SHEET_WRITE_URL:-}
+        VITE_SHEET_WRITE_TOKEN: ${SHEET_WRITE_TOKEN:-}
     image: wedding-web:latest
     container_name: wedding-web
     restart: unless-stopped

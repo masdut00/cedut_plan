@@ -5,6 +5,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
+# Jembatan tulis Google Sheet (Apps Script), diisi dari vps/.env lewat docker-compose
+ARG VITE_SHEET_WRITE_URL=""
+ARG VITE_SHEET_WRITE_TOKEN=""
+ENV VITE_SHEET_WRITE_URL=$VITE_SHEET_WRITE_URL     VITE_SHEET_WRITE_TOKEN=$VITE_SHEET_WRITE_TOKEN
 RUN npm run build
 
 # Stage 2: sajikan file statis dengan nginx

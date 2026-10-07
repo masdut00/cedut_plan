@@ -10,6 +10,11 @@ import AddTransactionModal from './components/AddTransactionModal'
 import { calculateSummary } from './utils/calculations'
 import { fetchSheetTransactions } from './services/googleSheetService'
 import {
+  appendTransactionToSheet,
+  deleteTransactionFromSheet,
+  isSheetWriteEnabled,
+} from './services/sheetWriteService'
+import {
   exportTransactionsJSON,
   importTransactionsJSON,
   loadStoredTarget,
@@ -64,20 +69,52 @@ export default function App() {
     }
   }, [syncFromSheet])
 
+  const sheetWritable = isSheetWriteEnabled()
+
+  const saveLocally = (update) => {
+    setTransactions((prev) => {
+      const next = update(prev)
+      saveStoredTransactions(next)
+      return next
+    })
+  }
+
   const updateTransactions = (next) => {
-    setTransactions(next)
-    saveStoredTransactions(next)
+    saveLocally(() => next)
     if (syncStatus === 'live') {
       setNotice({
         type: 'info',
-        text: 'Perubahan hanya tersimpan di perangkat ini dan akan tertimpa saat sinkronisasi Google Sheet. Catat lewat WhatsApp bot agar masuk ke Sheet.',
+        text: 'Perubahan hanya tersimpan di perangkat ini dan akan tertimpa saat sinkronisasi Google Sheet. Aktifkan penyimpanan ke Sheet (DEPLOY.md bagian E) agar transaksi tersimpan permanen.',
       })
     }
   }
 
-  const handleAdd = (tx) => updateTransactions([...transactions, tx])
+  // Rejects when the Sheet write fails so the modal can show the error and keep the form.
+  const handleAdd = async (tx) => {
+    if (!sheetWritable) {
+      updateTransactions([...transactions, tx])
+      return
+    }
+    await appendTransactionToSheet(tx)
+    saveLocally((prev) => [...prev, tx])
+    setNotice({ type: 'success', text: 'Transaksi tersimpan ke Google Sheet.' })
+  }
 
-  const handleDelete = (id) => updateTransactions(transactions.filter((t) => t.id !== id))
+  const handleDelete = async (id) => {
+    if (!sheetWritable) {
+      updateTransactions(transactions.filter((t) => t.id !== id))
+      return
+    }
+    const tx = transactions.find((t) => t.id === id)
+    if (!window.confirm(`Hapus transaksi "${tx?.catatan || id}" dari Google Sheet?`)) return
+    try {
+      await deleteTransactionFromSheet(id)
+      saveLocally((prev) => prev.filter((t) => t.id !== id))
+      setNotice({ type: 'success', text: 'Transaksi dihapus dari Google Sheet.' })
+    } catch (err) {
+      setNotice({ type: 'error', text: `Gagal menghapus dari Google Sheet: ${err.message}` })
+    }
+  }
 
   const handleExport = () => {
     const blob = new Blob([exportTransactionsJSON(transactions)], { type: 'application/json' })

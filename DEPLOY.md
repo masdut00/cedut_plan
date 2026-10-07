@@ -112,6 +112,34 @@ Bot (n8n + Evolution API + Postgres) dimatikan secara default. Untuk menyalakan:
 
 ---
 
+## E. Simpan transaksi dari dashboard ke Google Sheet
+
+Tanpa langkah ini, tambah/hapus transaksi di dashboard hanya tersimpan di browser dan hilang saat sinkronisasi. Jembatannya adalah Google Apps Script (`apps-script/Code.gs`) yang menulis ke Sheet atas nama akun Google kamu.
+
+1. **Buat token rahasia** (di VPS): `openssl rand -hex 24` → simpan hasilnya.
+2. **Pasang script**: buka Google Sheet → **Extensions → Apps Script**. Hapus isi `Code.gs` bawaan, tempel seluruh isi [`apps-script/Code.gs`](apps-script/Code.gs), klik **Save** (ikon disket).
+3. **Simpan token**: ikon ⚙️ **Project Settings** → *Script Properties* → **Add script property**: Property `WRITE_TOKEN`, Value = token dari langkah 1 → **Save script properties**.
+4. **Deploy**: **Deploy → New deployment** → ikon ⚙️ *Select type* → **Web app**:
+   - *Execute as*: **Me**
+   - *Who has access*: **Anyone**
+   - Klik **Deploy** → **Authorize access** → pilih akun Google → *Advanced* → *Go to … (unsafe)* → **Allow**.
+   - Salin **Web app URL** (berakhiran `/exec`).
+5. **Cek**: buka URL itu di browser → harus tampil `{"ok":true,"message":"Wedding Saving write API aktif."}`.
+6. **Isi `vps/.env`** lalu deploy ulang:
+   ```bash
+   nano vps/.env
+   # SHEET_WRITE_URL=https://script.google.com/macros/s/xxxx/exec
+   # SHEET_WRITE_TOKEN=<token dari langkah 1>
+   ./deploy.sh --no-pull
+   ```
+7. **Uji**: tambah transaksi di dashboard → muncul *"Transaksi tersimpan ke Google Sheet."* dan baris baru ada di Sheet. Hapus transaksi akan meminta konfirmasi lalu menghapus barisnya di Sheet.
+
+Jika `Code.gs` di repo berubah: tempel ulang di Apps Script → **Deploy → Manage deployments** → ✏️ → *Version*: **New version** → **Deploy** (URL tetap sama).
+
+> **Keamanan:** token ikut tertanam di kode dashboard, jadi siapa pun yang bisa membuka dashboard bisa melihatnya. Lindungi dashboard dengan password (Access List di NPM, bagian C). Jika token bocor: buat token baru, ganti `WRITE_TOKEN` di Script Properties dan `SHEET_WRITE_TOKEN` di `vps/.env`, lalu `./deploy.sh --no-pull`.
+
+---
+
 ## Troubleshooting
 
 | Masalah | Cek |
@@ -120,4 +148,7 @@ Bot (n8n + Evolution API + Postgres) dimatikan secara default. Untuk menyalakan:
 | Dashboard tidak terbuka via IP | `docker ps -a --filter name=wedding-web`, `docker logs wedding-web`, `sudo ufw status` |
 | Port 8081 sudah dipakai | Ganti `WEB_PORT` di `vps/.env` (mis. `8082`), `./deploy.sh --no-pull`, sesuaikan di NPM |
 | NPM "502 Bad Gateway" | Pastikan `curl -sI http://103.127.99.234:8081` dari VPS menjawab 200 |
+| "Token tidak valid." saat simpan | `SHEET_WRITE_TOKEN` di `vps/.env` harus sama persis dengan `WRITE_TOKEN` di Script Properties; lalu `./deploy.sh --no-pull` |
+| "Kolom ... tidak ada di baris 1" | Header baris 1 Sheet harus: `id, tanggal, bulan, penabung, tipe, kategori, nominal, catatan, created_at` |
+| Simpan gagal "Failed to fetch" | Deployment Apps Script harus *Who has access: Anyone*; cek URL berakhiran `/exec` (bukan `/dev`) |
 | Data tidak muncul | Google Sheet harus *Share → Anyone with the link → Viewer*, tab pertama bernama `Transactions` |

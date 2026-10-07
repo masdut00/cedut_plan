@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import TransactionHistory from './TransactionHistory'
 import AddTransactionModal from './AddTransactionModal'
@@ -87,7 +87,7 @@ describe('AddTransactionModal Component', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('submits a new transaction with derived bulan', () => {
+  it('submits a new transaction with derived bulan', async () => {
     const onSubmit = vi.fn()
     const onClose = vi.fn()
     render(<AddTransactionModal isOpen onClose={onClose} onSubmit={onSubmit} />)
@@ -110,7 +110,20 @@ describe('AddTransactionModal Component', () => {
       catatan: 'Setor gaji',
     })
     expect(tx.id).toBeTruthy()
-    expect(onClose).toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('stays open and shows the error when onSubmit rejects', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('Token tidak valid'))
+    const onClose = vi.fn()
+    render(<AddTransactionModal isOpen onClose={onClose} onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByLabelText('Nominal'), { target: { value: '1000000' } })
+    fireEvent.click(screen.getByRole('button', { name: /Simpan/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Token tidak valid')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Nominal')).toHaveValue('1000000')
+    expect(screen.getByRole('button', { name: /Simpan/i })).toBeEnabled()
   })
 
   it('rejects zero nominal', () => {

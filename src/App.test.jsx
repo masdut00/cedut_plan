@@ -128,4 +128,87 @@ describe('App Component', () => {
     await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Live'))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  describe('with Google Sheet write enabled', () => {
+    const SCRIPT_URL = 'https://script.google.com/macros/s/test/exec'
+
+    function mockSheetAndScript(scriptBody) {
+      global.fetch = vi.fn((url) => {
+        if (url === SCRIPT_URL) {
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(scriptBody) })
+        }
+        return Promise.resolve({ ok: true, text: () => Promise.resolve(SHEET_RESPONSE) })
+      })
+    }
+
+    function scriptCalls() {
+      return fetch.mock.calls.filter(([url]) => url === SCRIPT_URL).map(([, init]) => JSON.parse(init.body))
+    }
+
+    async function addViaModal(catatan) {
+      fireEvent.click(screen.getByRole('button', { name: /Tambah Transaksi/i }))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Nominal'), { target: { value: '1000000' } })
+      fireEvent.change(within(dialog).getByLabelText('Catatan'), { target: { value: catatan } })
+      fireEvent.click(within(dialog).getByRole('button', { name: /Simpan/i }))
+    }
+
+    beforeEach(() => {
+      vi.stubEnv('VITE_SHEET_WRITE_URL', SCRIPT_URL)
+      vi.stubEnv('VITE_SHEET_WRITE_TOKEN', 'rahasia')
+    })
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('saves a new transaction to the Sheet and shows it', async () => {
+      mockSheetAndScript({ ok: true })
+      render(<App />)
+      await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Live'))
+
+      await addViaModal('Setoran ke sheet')
+
+      expect(await screen.findByText('Setoran ke sheet')).toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent(/tersimpan ke Google Sheet/i)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      const [call] = scriptCalls()
+      expect(call).toMatchObject({ action: 'append', token: 'rahasia', transaction: { catatan: 'Setoran ke sheet', nominal: 1000000 } })
+    })
+
+    it('keeps the modal open with the error when the Sheet rejects', async () => {
+      mockSheetAndScript({ ok: false, error: 'Token tidak valid' })
+      render(<App />)
+      await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Live'))
+
+      await addViaModal('Gagal simpan')
+
+      expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Token tidak valid')
+      expect(screen.queryByText('Gagal simpan')).not.toBeInTheDocument()
+    })
+
+    it('deletes from the Sheet after confirmation', async () => {
+      mockSheetAndScript({ ok: true })
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      render(<App />)
+      await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Live'))
+
+      fireEvent.click(screen.getByRole('button', { name: /Hapus transaksi Setoran Cece sheet/i }))
+
+      await waitFor(() => expect(screen.queryByText('Setoran Cece sheet')).not.toBeInTheDocument())
+      expect(scriptCalls()).toEqual([{ token: 'rahasia', action: 'delete', id: 'TX-S2' }])
+    })
+
+    it('does nothing when delete is cancelled', async () => {
+      mockSheetAndScript({ ok: true })
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      render(<App />)
+      await waitFor(() => expect(screen.getByTestId('sync-status')).toHaveTextContent('Live'))
+
+      fireEvent.click(screen.getByRole('button', { name: /Hapus transaksi Setoran Cece sheet/i }))
+
+      expect(screen.getByText('Setoran Cece sheet')).toBeInTheDocument()
+      expect(scriptCalls()).toHaveLength(0)
+    })
+  })
 })

@@ -6,3 +6,5 @@ docs
 .superpowers
 *.log
 *.md
+.env*
+apps-script

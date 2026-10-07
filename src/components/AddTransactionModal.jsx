@@ -29,12 +29,15 @@ const inputClass =
  * @param {{
  *   isOpen: boolean,
  *   onClose: () => void,
- *   onSubmit: (transaction: Object) => void
+ *   onSubmit: (transaction: Object) => void | Promise<void>
  * }} props
+ *
+ * If onSubmit rejects, the modal stays open and shows the error message.
  */
 export default function AddTransactionModal({ isOpen, onClose, onSubmit }) {
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   if (!isOpen) return null
 
@@ -47,8 +50,9 @@ export default function AddTransactionModal({ isOpen, onClose, onSubmit }) {
     }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    if (saving) return
     if (!/^(Rp\s*)?[\d.,\s]+$/i.test(form.nominal.trim())) {
       setError('Nominal harus berupa angka, mis. 1.500.000.')
       return
@@ -63,18 +67,26 @@ export default function AddTransactionModal({ isOpen, onClose, onSubmit }) {
       return
     }
 
-    onSubmit({
-      id: `TX-${Date.now()}`,
-      tanggal: form.tanggal,
-      bulan: form.bulan || deriveMonthName(form.tanggal),
-      penabung: form.penabung,
-      tipe: form.tipe,
-      kategori: form.kategori.trim() || 'Tabungan Rutin',
-      nominal,
-      catatan: form.catatan.trim(),
-    })
-    setForm(emptyForm())
     setError('')
+    setSaving(true)
+    try {
+      await onSubmit({
+        id: `TX-${Date.now()}`,
+        tanggal: form.tanggal,
+        bulan: form.bulan || deriveMonthName(form.tanggal),
+        penabung: form.penabung,
+        tipe: form.tipe,
+        kategori: form.kategori.trim() || 'Tabungan Rutin',
+        nominal,
+        catatan: form.catatan.trim(),
+      })
+    } catch (err) {
+      setError(err?.message || 'Gagal menyimpan transaksi.')
+      return
+    } finally {
+      setSaving(false)
+    }
+    setForm(emptyForm())
     onClose()
   }
 
@@ -153,8 +165,12 @@ export default function AddTransactionModal({ isOpen, onClose, onSubmit }) {
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100">
               Batal
             </button>
-            <button type="submit" className="px-4 py-2 rounded-xl text-sm font-medium bg-wedding-rose-600 text-white hover:bg-wedding-rose-700">
-              Simpan
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 rounded-xl text-sm font-medium bg-wedding-rose-600 text-white hover:bg-wedding-rose-700 disabled:opacity-60 disabled:cursor-wait"
+            >
+              {saving ? 'Menyimpan…' : 'Simpan'}
             </button>
           </div>
         </form>
